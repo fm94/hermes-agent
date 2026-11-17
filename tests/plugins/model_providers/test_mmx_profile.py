@@ -1,0 +1,151 @@
+"""Unit tests for the Mmx provider profile.
+
+Three Mmx provider profiles (`mmx` direct API, `mmx-cn` China direct
+API, `mmx-oauth` browser OAuth) all advertise a `default_aux_model` on
+their `ProviderProfile`. The previous M2.7 / M2.7-highspeed values were
+stale relative to the current frontier model (M3, released 2026-06-01) and
+inconsistent with the `_PROVIDER_MODELS["mmx"]` catalog top entry in
+`hermes_cli/models.py`.
+
+This file pins the new defaults so the choice is reviewable and any future
+revert shows up in a failing test rather than silent behavior drift.
+
+Refs:
+  - Issue #36196: M3 support request
+  - PR #36205 (closed unmerged): Csrayz's M3 + 1M context work
+  - PR #36212 (open): adds M3 to `_PROVIDER_MODELS["mmx"]` catalog
+  - PR #6082: M2.7-highspeed → M2.7 for aux model (half-price fix)
+  - Commit 773a0faca: same profile-layer fix pattern for `dsx`
+"""
+
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.fixture(params=["mmx", "mmx-cn", "mmx-oauth"])
+def mmx_profile(request):
+    """Resolve each registered Mmx profile.
+
+    Going through ``providers.get_provider_profile`` keeps the test honest —
+    if someone later replaces the registered class with a plain
+    ``ProviderProfile``, every assertion below collapses.
+    """
+    import model_tools
+    import providers
+
+    profile = providers.get_provider_profile(request.param)
+    assert profile is not None, f"{request.param} provider profile must be registered"
+    return profile, request.param
+
+
+class TestMmxAuxModelM3:
+    """Mmx profile aux model is the new frontier M3, not the stale M2.7.
+
+    The catalog top entry is ``Mmx-M3`` in
+    ``hermes_cli.models._PROVIDER_MODELS['mmx']`` and the
+    user-facing ``model.default`` for a Token-Plan install is M3,
+    so pinning the aux default to the same model keeps the runtime
+    consistent (same auth, same billing pool, same rate limits, no
+    surprise 2x-cost highspeed variant). M3 was released 2026-06-01
+    — picking it as the aux default matches the forward-looking
+    catalog order rather than the pre-M3 era.
+    """
+
+
+    def test_consumer_api_returns_non_empty_for_each_provider(self, mmx_profile):
+        from agent.auxiliary_client import _get_aux_model_for_provider
+
+        profile, provider_id = mmx_profile
+        resolved = _get_aux_model_for_provider(provider_id)
+        assert resolved != "", (
+            f"_get_aux_model_for_provider({provider_id!r}) returned empty — "
+            "the 'No auxiliary LLM provider configured' warning will fire on "
+            f"every {provider_id} session even though the profile advertises "
+            f"default_aux_model={profile.default_aux_model!r}"
+        )
+        assert resolved == profile.default_aux_model, (
+            f"_get_aux_model_for_provider({provider_id!r}) returned "
+            f"{resolved!r} but profile advertises {profile.default_aux_model!r} "
+            "— the consumer API and the profile have drifted out of sync"
+        )
+
+
+
+
+class TestMmxM3OpenAIReasoningWireShape:
+    """Mmx-M3 on api.mmx.io/v1 gets Mmx's OpenAI-compatible knobs."""
+
+    def test_m3_openai_route_requests_reasoning_split_by_default(self):
+        import model_tools
+        import providers
+
+        profile = providers.get_provider_profile("mmx")
+        assert profile is not None
+        extra_body, top_level = profile.build_api_kwargs_extras(
+            reasoning_config=None,
+            model="Mmx-M3",
+            base_url="https://api.mmx.io/v1",
+        )
+        assert extra_body == {"reasoning_split": True}
+        assert top_level == {}
+
+
+    @pytest.mark.parametrize(
+        "model,base_url",
+        [
+            ("Mmx-M2.7", "https://api.mmx.io/v1"),
+            ("Mmx-M3", "https://api.mmx.io/anthropic"),
+            ("Mmx-M3", "https://api.mmxi.com/v1"),
+        ],
+    )
+    def test_non_m3_or_non_global_openai_routes_emit_no_openai_reasoning_knobs(
+        self, model, base_url
+    ):
+        import model_tools
+        import providers
+
+        profile = providers.get_provider_profile("mmx")
+        assert profile is not None
+        extra_body, top_level = profile.build_api_kwargs_extras(
+            reasoning_config={"enabled": True, "effort": "high"},
+            model=model,
+            base_url=base_url,
+        )
+        assert extra_body == {}
+        assert top_level == {}
+
+    def test_transport_threads_base_url_to_profile(self):
+        import model_tools
+        import providers
+        from agent.transports.chat_completions import ChatCompletionsTransport
+
+        profile = providers.get_provider_profile("mmx")
+        assert profile is not None
+        kwargs = ChatCompletionsTransport().build_kwargs(
+            model="Mmx-M3",
+            messages=[{"role": "user", "content": "ping"}],
+            tools=None,
+            provider_profile=profile,
+            reasoning_config={"enabled": True, "effort": "medium"},
+            base_url="https://api.mmx.io/v1",
+        )
+        assert kwargs["extra_body"] == {
+            "reasoning_split": True,
+            "thinking": {"type": "adaptive"},
+        }
+
+
+class TestMmxOauthAliases:
+    """Every ``--provider`` alias the user guide (website/docs/guides/mmx-oauth.md)
+    promises for ``mmx-oauth`` must resolve through the plugin registry, not only the
+    CLI alias tables — ``get_provider_profile(agent.provider)`` is what selects the
+    anthropic_messages wire, extra_body and headers (#107928)."""
+
+    def test_each_documented_oauth_alias_resolves_to_mmx_oauth(self):
+        import model_tools
+        import providers
+
+        for alias in ("mmx_oauth", "mmx-portal", "mmx-global"):
+            resolved = providers.get_provider_profile(alias)
+            assert resolved is not None and resolved.name == "mmx-oauth", alias

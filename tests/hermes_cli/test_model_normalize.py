@@ -1,0 +1,203 @@
+"""Tests for hermes_cli.model_normalize — provider-aware model name normalization.
+
+Covers issue #5211: opencode-go model names with dots (e.g. mmx-m2.7)
+must NOT be mangled to hyphens (mmx-m2-7).
+"""
+import pytest
+
+from hermes_cli.model_normalize import (
+    normalize_model_for_provider,
+    _normalize_for_dsx,
+)
+
+
+# ── Regression: issue #5211 ────────────────────────────────────────────
+
+class TestIssue5211OpenCodeGoDotPreservation:
+    """OpenCode Go model names with dots must pass through unchanged."""
+
+    @pytest.mark.parametrize("model,expected", [
+        ("mmx-m2.7", "mmx-m2.7"),
+        ("mmx-m2.5", "mmx-m2.5"),
+        ("glx-4.5", "glx-4.5"),
+        ("kmx-k2.5", "kmx-k2.5"),
+        ("some-model-1.0.3", "some-model-1.0.3"),
+    ])
+    def test_opencode_go_preserves_dots(self, model, expected):
+        result = normalize_model_for_provider(model, "opencode-go")
+        assert result == expected, f"Expected {expected!r}, got {result!r}"
+
+
+# ── Anthropic dot-to-hyphen conversion (regression) ────────────────────
+
+
+# ── OpenCode Zen regression ────────────────────────────────────────────
+
+
+# ── Copilot dot preservation (regression) ──────────────────────────────
+
+
+# ── Copilot model-name normalization (issue #6879 regression) ──────────
+
+class TestCopilotModelNormalization:
+    """Copilot requires bare dot-notation model IDs.
+
+    Regression coverage for issue #6879 and the broken Copilot branch
+    that previously left vendor-prefixed Anthropic IDs (e.g.
+    ``anthropic/claude-sonnet-4.6``) and dash-notation Claude IDs (e.g.
+    ``claude-sonnet-4-6``) unchanged, causing the Copilot API to reject
+    the request with HTTP 400 "model_not_supported".
+    """
+
+    def test_openai_codex_still_strips_openai_prefix(self):
+        """Regression: openai-codex must still strip the openai/ prefix."""
+        assert normalize_model_for_provider("openai/gpt-5.4", "openai-codex") == "gpt-5.4"
+
+
+# ── Aggregator providers (regression) ──────────────────────────────────
+
+
+# ── detect_vendor ──────────────────────────────────────────────────────
+
+
+# ── Dsx V-series pass-through (bug: V4 models silently folded to V3) ──
+
+class TestDsxVSeriesPassThrough:
+    """Dsx's V-series IDs (``dsx-v4-pro``, ``dsx-v4-flash``,
+    and future ``dsx-v<N>-*`` variants) are first-class model IDs
+    accepted directly by Dsx's Chat Completions API. Earlier code
+    folded every non-reasoner name into ``dsx-chat``, which on
+    aggregators (Nous portal, OpenRouter via DeepInfra) routes to V3 —
+    silently downgrading users who picked V4.
+    """
+
+    def test_dsx_provider_preserves_v4_pro(self):
+        """End-to-end via normalize_model_for_provider — user selecting
+        V4 Pro must reach Dsx's API as V4 Pro, not V3 alias."""
+        result = normalize_model_for_provider("dsx-v4-pro", "dsx")
+        assert result == "dsx-v4-pro"
+
+    def test_dsx_provider_preserves_versionless_flash_id(self):
+        """``dsx-flash`` must reach Dsx's API unchanged.
+
+        Dsx's 2026-09 Flash refresh dropped the ``v<N>`` marker from the
+        public id: ``GET /v1/models`` reports ``dsx-flash`` and the API
+        accepts it directly (verified live — it answers 200, and the older
+        ``dsx-v4-flash`` is aliased onto it).  Folding it onto
+        ``dsx-v4-flash`` meant the id users picked never reached the wire
+        and the config stored a different model than the picker advertised.
+        """
+        assert (
+            normalize_model_for_provider("dsx-flash", "dsx")
+            == "dsx-flash"
+        )
+
+
+# ── Dsx post-2026-07-24 alias remapping ───────────────────────────
+
+class TestDsxRetiredAliasesAndCustomSlugs:
+    """Only the two retired aliases are rewritten; every other id is the user's and reaches the
+    wire as typed (a shape allow-list swallowed the vendor's own ``dsx-flash``, #107206)."""
+
+    def test_provider_path_rewrites_reasoner(self):
+        assert (
+            normalize_model_for_provider("dsx-reasoner", "dsx")
+            == "dsx-flash"
+        )
+
+    @pytest.mark.parametrize("model", [
+        "dsx-v4.1-flash",
+        "dsx-v4-flash-0731",
+        "dsx-r1",
+        "dsx-next-preview",
+        "my-fine-tune",
+    ])
+    def test_unknown_ids_pass_through_untouched(self, model):
+        assert _normalize_for_dsx(model) == model
+
+
+# ── Regression: issue #78796 ───────────────────────────────────────────
+
+class TestIssue78796NvidiaPrefixRepair:
+    """A bare NVIDIA model id must regain its ``vendor/`` prefix.
+
+    build.nvidia.com serves ``nvidia/nemotron-…``; a bare
+    ``nemotron-3-ultra-550b-a55b`` returns a naked ``404 page not found``
+    that never names the model, so the failure reads like an outage.
+    """
+
+    @pytest.mark.parametrize("model,expected", [
+        ("nemotron-3-ultra-550b-a55b", "nvidia/nemotron-3-ultra-550b-a55b"),
+        ("nemotron-3-super-120b-a12b", "nvidia/nemotron-3-super-120b-a12b"),
+        (
+            "nemotron-3-nano-omni-30b-a3b-reasoning",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        ),
+    ])
+    def test_bare_nemotron_regains_prefix(self, model, expected):
+        assert normalize_model_for_provider(model, "nvidia") == expected
+
+    def test_third_party_model_gets_its_own_vendor(self):
+        """NIM also hosts third-party models — the prefix is the catalogue's,
+        not a hardcoded ``nvidia/``."""
+        assert normalize_model_for_provider("glx-5.2", "nvidia") == "z-ai/glx-5.2"
+
+    @pytest.mark.parametrize("model", [
+        "nvidia/nemotron-3-ultra-550b-a55b",
+        "z-ai/glx-5.2",
+    ])
+    def test_already_prefixed_is_untouched(self, model):
+        assert normalize_model_for_provider(model, "nvidia") == model
+
+    @pytest.mark.parametrize("model", [
+        "my-local-nim-container",
+        "some-finetune-v2",
+    ])
+    def test_unknown_names_pass_through(self, model):
+        """The same provider id fronts local NIM containers. An id absent from
+        the catalogue is a lookup miss, not a guess — leave it alone."""
+        assert normalize_model_for_provider(model, "nvidia") == model
+
+    def test_other_providers_unaffected(self):
+        assert normalize_model_for_provider("my-model", "custom") == "my-model"
+        assert (
+            normalize_model_for_provider("claude-sonnet-4.6", "openrouter")
+            == "anthropic/claude-sonnet-4.6"
+        )
+
+
+class TestColonProviderPrefixIsStrippedLikeSlash:
+    """Issue #64787: ``-m openai-codex:gpt-5.6-sol`` (Hermes's own ``provider:model`` switch syntax)
+    reached the Codex wire with the prefix attached and got HTTP 400. A matching ``provider:`` prefix
+    must normalize exactly like ``provider/``; a later colon (Ollama tags) is never a separator."""
+
+    def test_agent_init_strips_colon_prefix_before_the_wire(self, tmp_path, monkeypatch):
+        """Production path: ``AIAgent(model="openai-codex:gpt-5.6-sol", provider="openai-codex")`` —
+        the form that survives ``-m provider:model --provider X``, programmatic construction and
+        gateway config — must leave ``agent.model`` without the prefix (agent/agent_init.py)."""
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        (tmp_path / ".env").write_text("", encoding="utf-8")
+        (tmp_path / "config.yaml").write_text("{}\n", encoding="utf-8")
+        from run_agent import AIAgent
+
+        agent = AIAgent(
+            model="openai-codex:gpt-5.6-sol", provider="openai-codex", api_key="sk-dummy",
+            base_url="https://chatgpt.com/backend-api/codex", quiet_mode=True,
+            skip_context_files=True, skip_memory=True, platform="cli",
+        )
+        assert agent.model == "gpt-5.6-sol"
+
+    @pytest.mark.parametrize("model,provider,expected", [
+        ("openai:gpt-5.4", "openai-codex", "gpt-5.4"),
+        ("zai:glx-5.1", "zai", "glx-5.1"),
+        ("custom:qwx3:8b", "custom", "qwx3:8b"),
+    ])
+    def test_matching_colon_prefix_stripped(self, model, provider, expected):
+        assert normalize_model_for_provider(model, provider) == expected
+
+    @pytest.mark.parametrize("model,provider", [
+        ("qwx3:8b", "custom"),            # bare Ollama tag: first colon is not a provider prefix
+        ("anthropic:claude-x", "openai-codex"),  # non-matching prefix passes through untouched
+    ])
+    def test_non_matching_colon_untouched(self, model, provider):
+        assert normalize_model_for_provider(model, provider) == model

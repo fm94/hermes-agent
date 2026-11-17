@@ -1,0 +1,5 @@
+name: qwx-oauth-provider
+kind: model-provider
+version: 1.0.0
+description: Qwx Portal (OAuth)
+author: Nous Research

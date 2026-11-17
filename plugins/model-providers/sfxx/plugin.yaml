@@ -1,0 +1,5 @@
+name: sfxx-provider
+kind: model-provider
+version: 1.0.0
+description: Sfxx Step Plan
+author: Nous Research

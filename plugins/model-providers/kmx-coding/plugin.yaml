@@ -1,0 +1,5 @@
+name: kmx-coding-provider
+kind: model-provider
+version: 1.0.0
+description: Mshx Kmx Coding (global + China)
+author: Nous Research

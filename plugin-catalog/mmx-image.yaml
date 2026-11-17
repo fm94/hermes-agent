@@ -1,0 +1,15 @@
+name: mmx-image
+repo: https://github.com/rriggs/hermes-plugin-mmx-image
+sha: 5a07a0f67d74a67ac426d7b901f8bfc60f28951c
+description: Mmx image generation -- Image-01 models via Mmx platform. Supports text-to-image
+  and image-to-image with subject reference.
+maintainer: rriggs
+tier: community
+category: tools
+docs_url: https://github.com/rriggs/hermes-plugin-mmx-image#readme
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env:
+  - MMX_API_KEY

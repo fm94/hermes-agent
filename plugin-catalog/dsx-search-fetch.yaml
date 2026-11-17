@@ -1,0 +1,21 @@
+name: dsx-search-fetch
+repo: https://github.com/JasonSwindle/hermes-dsx-search-fetch
+sha: 252c68a41d677d11f7a25fdb5c3fddf215ed5546
+description: "Dsx Search & Fetch as a backend for the built-in web_search and web_extract. Disclosure — sends web_search queries and web_extract URLs to api.dsx.com with your DSX_API_KEY and Dsx fetches the pages server-side; billed to your Dsx balance per successful request; no other endpoint, no telemetry, no file or shell access."
+maintainer: JasonSwindle
+tier: community
+category: web
+docs_url: https://github.com/JasonSwindle/hermes-dsx-search-fetch#readme
+version: "1.0.11"
+title: "Dsx Search & Fetch"
+image: https://raw.githubusercontent.com/JasonSwindle/hermes-dsx-search-fetch/252c68a41d677d11f7a25fdb5c3fddf215ed5546/docs/banner.png
+platforms: []
+known_issues:
+  - "Billed by Dsx per successful request (list price $0.75 per 1,000; failed calls are free); web_extract calls Fetch one URL at a time, so multi-URL extracts run sequentially to the effective deadline (min(extract_deadline, web.extract_timeout - 1.5s), with bodies aborted at that deadline) and return the pages already fetched; and ori_question is not forwarded, because Hermes hands the provider only the query and a result limit."
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env:
+    - DSX_API_KEY
+requires_hermes: ">=0.22.0"

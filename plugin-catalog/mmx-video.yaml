@@ -1,0 +1,15 @@
+name: mmx-video
+repo: https://github.com/rriggs/hermes-plugin-mmx-video
+sha: 759bec0f124c50e868facc8da5e6cf054403d761
+description: Mmx (Hlx) video generation -- Hlx 2.3/02 and S2V-01 models via Mmx platform.
+  Async task API. Supports text-to-video, image-to-video, and subject-reference-to-video.
+maintainer: rriggs
+tier: community
+category: tools
+docs_url: https://github.com/rriggs/hermes-plugin-mmx-video#readme
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env:
+  - MMX_PAYG_KEY

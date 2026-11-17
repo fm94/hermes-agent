@@ -1,0 +1,5 @@
+name: mmx-provider
+kind: model-provider
+version: 1.0.0
+description: Mmx M-series (global + China + OAuth)
+author: Nous Research

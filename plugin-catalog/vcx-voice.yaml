@@ -1,0 +1,25 @@
+name: vcx-voice
+repo: https://github.com/linxichen/hermes-vcx-voice
+sha: cd242cc2e9dea8e139a5500914cc1619dc249497
+description: >-
+  Vcx (火山引擎) Dbxx TTS and STT providers for Hermes, registered with
+  register_tts_provider / register_transcription_provider (tts.provider and
+  stt.provider: vcx). Chinese voice presets, [情绪] emotion markers,
+  streaming ASR. Optional opt-in LLM transcript cleanup through Vcx Ark.
+  Disclosure — TTS text and STT audio go to Vcx speech
+  (openspeech.bdnx.com); with stt.vcx.enable_llm_postprocess: true,
+  each transcript also goes to Vcx Ark (ark.cn-beijing.volces.com); off
+  by default.
+maintainer: linxichen
+tier: community
+category: voice
+requires_hermes: ">=0.21.6"
+docs_url: https://github.com/linxichen/hermes-vcx-voice#readme
+version: "2.0.0"
+capabilities:
+  provides_tools: []
+  provides_hooks:
+  - pre_llm_call
+  provides_middleware: []
+  requires_env:
+  - VCX_VOICE_API_KEY
